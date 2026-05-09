@@ -73,10 +73,18 @@ def _spill_array(array: np.ndarray, directory: str) -> NumpyArrayFileRef:
         suffix=".npy",
         dir=directory,
     )
+    fd_transferred = False
     try:
-        with os.fdopen(fd, "wb") as f:
+        f = os.fdopen(fd, "wb")
+        fd_transferred = True
+        with f:
             np.save(f, array, allow_pickle=False)
     except Exception:
+        if not fd_transferred:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         try:
             os.unlink(path)
         except FileNotFoundError:

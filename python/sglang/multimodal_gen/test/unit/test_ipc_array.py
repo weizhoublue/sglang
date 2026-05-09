@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -70,6 +71,35 @@ def test_spill_removes_temp_file_when_save_fails(monkeypatch, tmp_path):
         spill_large_arrays_to_file_refs(array)
 
     assert created_paths
+    assert not created_paths[0].exists()
+
+
+def test_spill_closes_fd_when_fdopen_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(ipc_array, "_array_ipc_dir", lambda: str(tmp_path))
+    array = np.arange(ipc_array._MIN_FILE_REF_BYTES, dtype=np.uint8)
+    created_fds = []
+    created_paths = []
+
+    original_mkstemp = tempfile.mkstemp
+
+    def tracked_mkstemp(*args, **kwargs):
+        fd, path = original_mkstemp(*args, **kwargs)
+        created_fds.append(fd)
+        created_paths.append(Path(path))
+        return fd, path
+
+    def fail_fdopen(*args, **kwargs):
+        raise OSError("simulated fdopen failure")
+
+    monkeypatch.setattr(tempfile, "mkstemp", tracked_mkstemp)
+    monkeypatch.setattr(os, "fdopen", fail_fdopen)
+
+    with pytest.raises(OSError, match="simulated fdopen failure"):
+        spill_large_arrays_to_file_refs(array)
+
+    assert created_fds
+    with pytest.raises(OSError):
+        os.fstat(created_fds[0])
     assert not created_paths[0].exists()
 
 
