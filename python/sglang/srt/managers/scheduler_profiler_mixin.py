@@ -190,18 +190,25 @@ class SchedulerProfilerMixin:
             self.rpd_profiler.rangePush("", "rpd profile range", "")
             self.profile_in_progress = True
         elif torchprof_activities:
-            self.torch_profiler = torch.profiler.profile(
-                activities=torchprof_activities,
-                with_stack=with_stack if with_stack is not None else True,
-                record_shapes=record_shapes if record_shapes is not None else False,
-                on_trace_ready=(
-                    None
-                    if not _is_npu
-                    else torch_npu.profiler.tensorboard_trace_handler(
+            torch_profiler_kwargs = {
+                "activities": torchprof_activities,
+                "with_stack": with_stack if with_stack is not None else True,
+                "record_shapes": record_shapes if record_shapes is not None else False,
+                "on_trace_ready": None,
+            }
+            if _is_npu:
+                torch_profiler_kwargs["on_trace_ready"] = (
+                    torch_npu.profiler.tensorboard_trace_handler(
                         str(self.torch_profiler_output_dir)
                     )
-                ),
-            )
+                )
+                torch_profiler_kwargs["experimental_config"] = (
+                    torch_npu.profiler._ExperimentalConfig(
+                        export_type=[torch_npu.profiler.ExportType.Text],
+                        profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+                    )
+                )
+            self.torch_profiler = torch.profiler.profile(**torch_profiler_kwargs)
             self.torch_profiler.start()
             self.profile_in_progress = True
 
